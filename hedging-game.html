@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Hedging Game</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Simple icon components
+        const Icon = ({ name, className }) => {
+            const icons = {
+                'shield': 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z',
+                'trending-down': 'M23 18l-9.5-9.5-5 5L1 6',
+                'trending-up': 'M23 6l-9.5 9.5-5-5L1 18',
+                'alert-triangle': 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01',
+                'award': 'M12 15l-2 5-7-2 2-7 5 2zM12 15l2 5 7-2-2-7-5 2zM12 2v6M12 15V8',
+                'target': 'M22 12c0 5.52-4.48 10-10 10S2 17.52 2 12 6.48 2 12 2s10 4.48 10 10zM8 12c0 2.21 1.79 4 4 4s4-1.79 4-4-1.79-4-4-4-4 1.79-4 4z',
+                'zap': 'M13 2L3 14h9l-1 8 10-12h-9l1-8z'
+            };
+            
+            return (
+                <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d={icons[name]} />
+                </svg>
+            );
+        };
+
+        const HedgingGame = () => {
+            // Portfolio state
+            const [cash, setCash] = useState(20000);
+            const [portfolio, setPortfolio] = useState([
+                { name: 'Tech Stocks', value: 30000, exposure: 'tech', quantity: 300 },
+                { name: 'Bank Stocks', value: 25000, exposure: 'financial', quantity: 500 },
+                { name: 'Energy Stocks', value: 25000, exposure: 'energy', quantity: 250 },
+                { name: 'International Stocks', value: 20000, exposure: 'currency', quantity: 200 }
+            ]);
+            
+            // Hedging instruments state
+            const [hedges, setHedges] = useState([]);
+            const [availableHedges] = useState([
+                { 
+                    id: 'tech_put', 
+                    name: 'Tech Sector Put Options', 
+                    cost: 1500, 
+                    protection: 15000, 
+                    exposure: 'tech',
+                    description: 'Protects against 50% drop in tech stocks'
+                },
+                { 
+                    id: 'market_put', 
+                    name: 'Market Index Put Options', 
+                    cost: 2000, 
+                    protection: 20000, 
+                    exposure: 'market',
+                    description: 'Protects against 20% market decline'
+                },
+                { 
+                    id: 'bank_short', 
+                    name: 'Short Bank ETF', 
+                    cost: 0, 
+                    protection: 12000, 
+                    exposure: 'financial',
+                    description: 'Hedge financial sector exposure'
+                },
+                { 
+                    id: 'oil_futures', 
+                    name: 'Oil Futures Hedge', 
+                    cost: 1000, 
+                    protection: 10000, 
+                    exposure: 'energy',
+                    description: 'Protects against oil price drops'
+                },
+                { 
+                    id: 'currency_hedge', 
+                    name: 'Currency Forward Contract', 
+                    cost: 800, 
+                    protection: 8000, 
+                    exposure: 'currency',
+                    description: 'Locks in exchange rates'
+                },
+                { 
+                    id: 'vix_calls', 
+                    name: 'Volatility (VIX) Call Options', 
+                    cost: 1200, 
+                    protection: 15000, 
+                    exposure: 'volatility',
+                    description: 'Profits from increased volatility'
+                }
+            ]);
+
+            // Game state
+            const [scenario, setScenario] = useState(null);
+            const [gamePhase, setGamePhase] = useState('setup'); // setup, event, result
+            const [score, setScore] = useState(0);
+            const [round, setRound] = useState(1);
+            const [gameHistory, setGameHistory] = useState([]);
+            const [eventResult, setEventResult] = useState(null);
+
+            // Scenarios
+            const scenarios = [
+                {
+                    id: 1,
+                    name: 'Tech Bubble Burst',
+                    description: 'Signs of overvaluation in tech sector. Analysts predict potential 40% correction.',
+                    impact: { tech: -40, financial: -10, energy: 0, currency: 0, market: -15 },
+                    news: 'Major tech companies report disappointing earnings, triggering massive selloff!'
+                },
+                {
+                    id: 2,
+                    name: 'Banking Crisis',
+                    description: 'Credit concerns rising. Regional banks showing stress.',
+                    impact: { tech: -10, financial: -35, energy: -5, currency: 0, market: -20 },
+                    news: 'Banking sector collapses as credit losses mount!'
+                },
+                {
+                    id: 3,
+                    name: 'Oil Supply Shock',
+                    description: 'Geopolitical tensions threaten oil supply, energy prices soaring.',
+                    impact: { tech: -5, financial: 5, energy: 30, currency: -5, market: -10 },
+                    news: 'Oil prices skyrocket as supply disruptions hit global markets! Energy stocks surge.'
+                },
+                {
+                    id: 4,
+                    name: 'Currency Crisis',
+                    description: 'Dollar showing extreme volatility against major currencies.',
+                    impact: { tech: -5, financial: -10, energy: 0, currency: -25, market: -10 },
+                    news: 'Currency markets in turmoil as dollar crashes!'
+                },
+                {
+                    id: 5,
+                    name: 'Market Crash',
+                    description: 'Multiple indicators suggesting broad market decline.',
+                    impact: { tech: -25, financial: -25, energy: -20, currency: -15, market: -25 },
+                    news: 'Global markets crash on recession fears!'
+                },
+                {
+                    id: 6,
+                    name: 'Volatility Spike',
+                    description: 'Market uncertainty at extreme levels.',
+                    impact: { tech: -20, financial: -15, energy: -15, currency: -10, volatility: 50 },
+                    news: 'Markets whipsawed by extreme volatility!'
+                },
+                {
+                    id: 7,
+                    name: 'Interest Rate Shock',
+                    description: 'Central bank announces unexpected 200bp rate hike to combat inflation.',
+                    impact: { tech: -30, financial: -20, energy: -5, currency: 10, market: -18 },
+                    news: 'Fed shocks markets with massive rate hike! Growth stocks plummet, dollar surges.'
+                },
+                {
+                    id: 8,
+                    name: 'Cyber Attack Crisis',
+                    description: 'Major financial infrastructure targeted by sophisticated cyber attacks.',
+                    impact: { tech: -15, financial: -30, energy: -5, currency: -5, market: -20 },
+                    news: 'Massive cyber attack paralyzes banking systems! Financial sector in freefall.'
+                },
+                {
+                    id: 9,
+                    name: 'Trade War Escalation',
+                    description: 'New tariffs announced on technology and manufacturing imports.',
+                    impact: { tech: -25, financial: -10, energy: -8, currency: -20, market: -15 },
+                    news: 'Trade war intensifies! Tech and international stocks hammered by new tariffs.'
+                }
+            ];
+
+            // Calculate total portfolio value
+            const totalPortfolioValue = portfolio.reduce((sum, asset) => sum + asset.value, 0) + cash;
+
+            // Start new round
+            const startNewRound = () => {
+                const newScenario = scenarios[Math.floor(Math.random() * scenarios.length)];
+                setScenario(newScenario);
+                setGamePhase('setup');
+                setHedges([]);
+                setEventResult(null);
+            };
+
+            // Purchase hedge
+            const purchaseHedge = (hedge) => {
+                if (cash < hedge.cost) {
+                    alert('Not enough cash to purchase this hedge!');
+                    return;
+                }
+                
+                if (hedges.find(h => h.id === hedge.id)) {
+                    alert('You already have this hedge!');
+                    return;
+                }
+
+                setCash(prev => prev - hedge.cost);
+                setHedges(prev => [...prev, hedge]);
+            };
+
+            // Remove hedge
+            const removeHedge = (hedgeId) => {
+                const hedge = hedges.find(h => h.id === hedgeId);
+                if (hedge) {
+                    setCash(prev => prev + hedge.cost * 0.5); // Get back 50% of cost
+                    setHedges(prev => prev.filter(h => h.id !== hedgeId));
+                }
+            };
+
+            // Execute market event
+            const executeEvent = () => {
+                setGamePhase('event');
+                
+                // Calculate losses
+                let losses = {};
+                let totalLoss = 0;
+                
+                portfolio.forEach(asset => {
+                    const impactFactor = (scenario.impact[asset.exposure] || 0) / 100; // Convert percentage to decimal
+                    const loss = asset.value * impactFactor;
+                    losses[asset.name] = loss;
+                    totalLoss += loss;
+                });
+
+                // Calculate hedge protection
+                let totalProtection = 0;
+                let hedgeDetails = [];
+
+                hedges.forEach(hedge => {
+                    let protection = 0;
+                    
+                    if (hedge.exposure === 'market') {
+                        // Market hedge protects proportionally
+                        protection = Math.min(hedge.protection, Math.abs(totalLoss) * 0.8);
+                    } else if (hedge.exposure === 'volatility' && scenario.impact.volatility) {
+                        // VIX hedge profits from volatility
+                        protection = hedge.protection * (scenario.impact.volatility / 100);
+                    } else if (scenario.impact[hedge.exposure]) {
+                        // Specific hedges protect their exposure
+                        protection = Math.min(hedge.protection, Math.abs(losses[portfolio.find(p => p.exposure === hedge.exposure)?.name] || 0));
+                    }
+                    
+                    totalProtection += protection;
+                    hedgeDetails.push({ name: hedge.name, protection });
+                });
+
+                // Calculate final result
+                const netLoss = totalLoss + totalProtection;
+                const hedgeCost = hedges.reduce((sum, h) => sum + h.cost, 0);
+                const efficiency = hedgeCost > 0 ? (totalProtection / hedgeCost) : 0;
+                
+                // Update portfolio values
+                setPortfolio(prev => prev.map(asset => ({
+                    ...asset,
+                    value: asset.value + (losses[asset.name] || 0) + 
+                           (totalProtection * (losses[asset.name] / totalLoss || 0))
+                })));
+
+                // Calculate score
+                const protectionRatio = Math.abs(totalProtection / totalLoss) || 0;
+                const roundScore = Math.round(
+                    (protectionRatio * 100) + 
+                    (efficiency * 20) - 
+                    (hedgeCost / 100)
+                );
+                
+                setScore(prev => prev + Math.max(0, roundScore));
+
+                setEventResult({
+                    losses,
+                    totalLoss,
+                    totalProtection,
+                    netLoss,
+                    hedgeCost,
+                    efficiency,
+                    roundScore,
+                    hedgeDetails
+                });
+
+                setGamePhase('result');
+            };
+
+            // Continue to next round
+            const nextRound = () => {
+                if (round >= 5) {
+                    setGamePhase('gameover');
+                    return;
+                }
+                
+                setRound(prev => prev + 1);
+                startNewRound();
+            };
+
+            // Reset game
+            const resetGame = () => {
+                setCash(20000);
+                setPortfolio([
+                    { name: 'Tech Stocks', value: 30000, exposure: 'tech', quantity: 300 },
+                    { name: 'Bank Stocks', value: 25000, exposure: 'financial', quantity: 500 },
+                    { name: 'Energy Stocks', value: 25000, exposure: 'energy', quantity: 250 },
+                    { name: 'International Stocks', value: 20000, exposure: 'currency', quantity: 200 }
+                ]);
+                setHedges([]);
+                setScore(0);
+                setRound(1);
+                setGameHistory([]);
+                startNewRound();
+            };
+
+            // Initialize game
+            useEffect(() => {
+                startNewRound();
+            }, []);
+
+            return (
+                <div className="max-w-6xl mx-auto p-6 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl shadow-xl">
+                    <div className="mb-6">
+                        <h1 className="text-3xl font-bold text-gray-800 mb-2">Portfolio Hedging Game</h1>
+                        <p className="text-gray-600">Protect your portfolio from market events using hedging instruments</p>
+                    </div>
+
+                    {/* Game Stats */}
+                    <div className="grid grid-cols-4 gap-4 mb-6">
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-gray-600">Portfolio Value</span>
+                                <Icon name="target" className="w-5 h-5 text-blue-500" />
+                            </div>
+                            <div className="text-2xl font-bold text-gray-800">${totalPortfolioValue.toLocaleString()}</div>
+                        </div>
+                        
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-gray-600">Cash Available</span>
+                                <Icon name="trending-up" className="w-5 h-5 text-green-500" />
+                            </div>
+                            <div className="text-2xl font-bold text-gray-800">${cash.toLocaleString()}</div>
+                        </div>
+                        
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-gray-600">Score</span>
+                                <Icon name="award" className="w-5 h-5 text-yellow-500" />
+                            </div>
+                            <div className="text-2xl font-bold text-gray-800">{score}</div>
+                        </div>
+                        
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-gray-600">Round</span>
+                                <Icon name="zap" className="w-5 h-5 text-purple-500" />
+                            </div>
+                            <div className="text-2xl font-bold text-gray-800">{round} / 5</div>
+                        </div>
+                    </div>
+
+                    {/* Portfolio Holdings */}
+                    <div className="bg-white p-4 rounded-lg shadow mb-6">
+                        <h3 className="font-semibold mb-3">Your Portfolio</h3>
+                        <div className="grid grid-cols-4 gap-3">
+                            {portfolio.map(asset => (
+                                <div key={asset.name} className="p-3 bg-gray-50 rounded">
+                                    <div className="font-medium text-gray-800">{asset.name}</div>
+                                    <div className="text-xl font-bold text-gray-700">${asset.value.toLocaleString()}</div>
+                                    <div className="text-sm text-gray-500">{asset.quantity} shares</div>
+                                    <div className="text-xs text-gray-400 mt-1">Exposure: {asset.exposure}</div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Game Phases */}
+                    {gamePhase === 'setup' && scenario && (
+                        <>
+                            {/* Scenario Warning */}
+                            <div className="bg-yellow-50 border-2 border-yellow-300 p-4 rounded-lg mb-6">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Icon name="alert-triangle" className="w-6 h-6 text-yellow-600" />
+                                    <h3 className="font-bold text-lg">Market Alert: {scenario.name}</h3>
+                                </div>
+                                <p className="text-gray-700">{scenario.description}</p>
+                            </div>
+
+                            {/* Available Hedges */}
+                            <div className="bg-white p-4 rounded-lg shadow mb-6">
+                                <h3 className="font-semibold mb-3">Available Hedges</h3>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {availableHedges.map(hedge => (
+                                        <div key={hedge.id} className="p-3 border rounded-lg">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <div>
+                                                    <div className="font-medium">{hedge.name}</div>
+                                                    <div className="text-sm text-gray-600">{hedge.description}</div>
+                                                </div>
+                                                <Icon name="shield" className="w-5 h-5 text-blue-500" />
+                                            </div>
+                                            <div className="flex justify-between items-center">
+                                                <div>
+                                                    <div className="text-sm text-gray-500">Cost: ${hedge.cost.toLocaleString()}</div>
+                                                    <div className="text-sm text-green-600">Protection: ${hedge.protection.toLocaleString()}</div>
+                                                </div>
+                                                <button
+                                                    onClick={() => purchaseHedge(hedge)}
+                                                    disabled={hedges.find(h => h.id === hedge.id) || cash < hedge.cost}
+                                                    className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600 disabled:bg-gray-300"
+                                                >
+                                                    {hedges.find(h => h.id === hedge.id) ? 'Owned' : 'Buy'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Active Hedges */}
+                            <div className="bg-white p-4 rounded-lg shadow mb-6">
+                                <h3 className="font-semibold mb-3">Your Active Hedges</h3>
+                                {hedges.length === 0 ? (
+                                    <p className="text-gray-500">No hedges active. Your portfolio is fully exposed to risk!</p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {hedges.map(hedge => (
+                                            <div key={hedge.id} className="flex justify-between items-center p-2 bg-green-50 rounded">
+                                                <div>
+                                                    <span className="font-medium">{hedge.name}</span>
+                                                    <span className="ml-2 text-sm text-gray-600">
+                                                        (Protection: ${hedge.protection.toLocaleString()})
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    onClick={() => removeHedge(hedge.id)}
+                                                    className="px-2 py-1 bg-red-100 text-red-600 rounded text-sm hover:bg-red-200"
+                                                >
+                                                    Remove (50% refund)
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                <div className="mt-3 pt-3 border-t">
+                                    <div className="flex justify-between font-semibold">
+                                        <span>Total Hedge Cost:</span>
+                                        <span>${hedges.reduce((sum, h) => sum + h.cost, 0).toLocaleString()}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Execute Event Button */}
+                            <button
+                                onClick={executeEvent}
+                                className="w-full py-3 bg-red-500 text-white font-semibold rounded-lg hover:bg-red-600"
+                            >
+                                Execute Market Event
+                            </button>
+                        </>
+                    )}
+
+                    {/* Event Result */}
+                    {gamePhase === 'result' && eventResult && (
+                        <div className="space-y-6">
+                            <div className="bg-red-50 border-2 border-red-300 p-4 rounded-lg">
+                                <h3 className="font-bold text-lg mb-2 flex items-center gap-2">
+                                    <Icon name="trending-down" className="w-6 h-6 text-red-600" />
+                                    Market Event Occurred!
+                                </h3>
+                                <p className="text-gray-700 font-medium">{scenario.news}</p>
+                            </div>
+
+                            <div className="bg-white p-4 rounded-lg shadow">
+                                <h3 className="font-semibold mb-3">Impact on Portfolio</h3>
+                                <div className="space-y-2">
+                                    {Object.entries(eventResult.losses).map(([asset, loss]) => (
+                                        <div key={asset} className="flex justify-between">
+                                            <span>{asset}</span>
+                                            <span className={loss < 0 ? 'text-red-600 font-medium' : loss > 0 ? 'text-green-600 font-medium' : 'text-gray-600'}>
+                                                {loss >= 0 ? '+$' : '-$'}{Math.abs(loss).toFixed(0)}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="bg-white p-4 rounded-lg shadow">
+                                <h3 className="font-semibold mb-3">Hedge Performance</h3>
+                                {eventResult.hedgeDetails.length === 0 ? (
+                                    <p className="text-gray-500">No hedges were active!</p>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {eventResult.hedgeDetails.map((hedge, idx) => (
+                                            <div key={idx} className="flex justify-between">
+                                                <span>{hedge.name}</span>
+                                                <span className="text-green-600 font-medium">
+                                                    +${hedge.protection.toFixed(0)}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="bg-gradient-to-r from-blue-100 to-purple-100 p-4 rounded-lg">
+                                <h3 className="font-semibold mb-3">Round Summary</h3>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <div className="text-sm text-gray-600">Portfolio Impact</div>
+                                        <div className={`text-xl font-bold ${eventResult.totalLoss < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                            {eventResult.totalLoss >= 0 ? '+$' : '-$'}{Math.abs(eventResult.totalLoss).toFixed(0)}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-sm text-gray-600">Hedge Protection</div>
+                                        <div className="text-xl font-bold text-green-600">
+                                            +${eventResult.totalProtection.toFixed(0)}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-sm text-gray-600">Hedge Cost</div>
+                                        <div className="text-xl font-bold text-orange-600">
+                                            -${eventResult.hedgeCost.toFixed(0)}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-sm text-gray-600">Net P&L</div>
+                                        <div className={`text-xl font-bold ${(eventResult.netLoss - eventResult.hedgeCost) < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                            {(eventResult.netLoss - eventResult.hedgeCost) >= 0 ? '+$' : '-$'}{Math.abs(eventResult.netLoss - eventResult.hedgeCost).toFixed(0)}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="mt-3 pt-3 border-t grid grid-cols-2 gap-4">
+                                    <div>
+                                        <div className="text-sm text-gray-600">Hedge Efficiency</div>
+                                        <div className="text-lg font-bold">
+                                            {(eventResult.efficiency * 100).toFixed(0)}%
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div className="text-sm text-gray-600">Round Score</div>
+                                        <div className="text-lg font-bold text-purple-600">
+                                            +{eventResult.roundScore}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={nextRound}
+                                className="w-full py-3 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600"
+                            >
+                                {round >= 5 ? 'View Final Score' : 'Next Round'}
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Game Over */}
+                    {gamePhase === 'gameover' && (
+                        <div className="text-center">
+                            <div className="bg-gradient-to-r from-yellow-100 to-orange-100 p-8 rounded-lg mb-6">
+                                <Icon name="award" className="w-16 h-16 text-yellow-600 mx-auto mb-4" />
+                                <h2 className="text-3xl font-bold mb-4">Game Complete!</h2>
+                                <div className="text-5xl font-bold text-gray-800 mb-2">
+                                    Final Score: {score}
+                                </div>
+                                <div className="text-xl text-gray-600">
+                                    Portfolio Value: ${totalPortfolioValue.toLocaleString()}
+                                </div>
+                            </div>
+                            
+                            <button
+                                onClick={resetGame}
+                                className="px-6 py-3 bg-blue-500 text-white font-semibold rounded-lg hover:bg-blue-600"
+                            >
+                                Play Again
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Instructions */}
+                    {gamePhase === 'setup' && (
+                        <div className="mt-6 p-4 bg-purple-50 rounded-lg">
+                            <h3 className="font-semibold mb-2">How to Play:</h3>
+                            <ul className="text-sm text-gray-700 space-y-1">
+                                <li>• Read the market alert to understand the coming risk</li>
+                                <li>• Purchase hedges that protect against specific exposures</li>
+                                <li>• Balance protection cost against potential losses</li>
+                                <li>• Execute the event to see how well your hedges performed</li>
+                                <li>• Score is based on protection effectiveness and cost efficiency</li>
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // Render the app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<HedgingGame />);
+    </script>
+</body>
+</html>

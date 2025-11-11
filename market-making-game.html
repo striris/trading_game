@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Market Making Game</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/lucide@latest/font/lucide.min.css">
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useCallback } = React;
+
+        // Lucide icon components
+        const Icon = ({ name, className }) => {
+            const icons = {
+                'trending-up': 'M23 6l-9.5 9.5-5-5L1 18',
+                'trending-down': 'M23 18l-9.5-9.5-5 5L1 6',
+                'dollar-sign': 'M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
+                'package': 'M16.5 9.4l-9-5.19M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z',
+                'alert-circle': 'M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zM12 8v4M12 16h.01',
+                'trophy': 'M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 2h4M12 2v17'
+            };
+            
+            return (
+                <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d={icons[name]} />
+                </svg>
+            );
+        };
+
+        const MarketMakingGame = () => {
+            // Game state
+            const [cash, setCash] = useState(10000);
+            const [inventory, setInventory] = useState(0);
+            const [trueValue, setTrueValue] = useState(100);
+            const [bidPrice, setBidPrice] = useState(99);
+            const [askPrice, setAskPrice] = useState(101);
+            const [trades, setTrades] = useState([]);
+            const [currentTrade, setCurrentTrade] = useState(0);
+            const [gameActive, setGameActive] = useState(false);
+            const [level, setLevel] = useState(1);
+            const [totalPnL, setTotalPnL] = useState(0);
+            const [lastTradeResult, setLastTradeResult] = useState(null);
+            
+            const MAX_TRADES = 50;
+            const MAX_INVENTORY = 100;
+
+            // Calculate current portfolio value
+            const portfolioValue = cash + (inventory * trueValue);
+            const startingValue = 10000;
+            const currentPnL = portfolioValue - startingValue;
+
+            // Random walk for true value
+            const updateTrueValue = useCallback(() => {
+                setTrueValue(prev => {
+                    const change = (Math.random() - 0.5) * (level === 1 ? 2 : level === 2 ? 4 : 6);
+                    return Math.max(85, Math.min(115, prev + change));
+                });
+            }, [level]);
+
+            // Simulate trader arrival
+            const simulateTrade = useCallback(() => {
+                if (!gameActive || currentTrade >= MAX_TRADES) {
+                    setGameActive(false);
+                    return;
+                }
+
+                const isInformed = level === 3 && Math.random() < 0.2;
+                const futureValue = isInformed ? trueValue + (Math.random() - 0.5) * 10 : trueValue;
+                
+                // Determine if trader wants to buy or sell
+                const spread = askPrice - bidPrice;
+                const midPrice = (askPrice + bidPrice) / 2;
+                
+                let tradeType = null;
+                let executed = false;
+                let price = 0;
+                let profit = 0;
+
+                // Informed traders are more likely to trade in profitable direction
+                if (isInformed) {
+                    if (futureValue > askPrice && inventory > -MAX_INVENTORY) {
+                        tradeType = 'BUY';
+                        price = askPrice;
+                        executed = true;
+                    } else if (futureValue < bidPrice && inventory < MAX_INVENTORY) {
+                        tradeType = 'SELL';
+                        price = bidPrice;
+                        executed = true;
+                    }
+                } else {
+                    // Random traders
+                    const buyProbability = Math.max(0.1, Math.min(0.9, 0.5 - (midPrice - trueValue) / 20));
+                    
+                    if (Math.random() < buyProbability && inventory > -MAX_INVENTORY) {
+                        tradeType = 'BUY';
+                        price = askPrice;
+                        executed = true;
+                    } else if (inventory < MAX_INVENTORY) {
+                        tradeType = 'SELL';
+                        price = bidPrice;
+                        executed = true;
+                    }
+                }
+
+                if (executed) {
+                    if (tradeType === 'BUY') {
+                        // Trader buys from us at our ask price
+                        setCash(prev => prev + price);
+                        setInventory(prev => prev - 1);
+                        profit = price - trueValue;
+                    } else {
+                        // Trader sells to us at our bid price
+                        setCash(prev => prev - price);
+                        setInventory(prev => prev + 1);
+                        profit = trueValue - price;
+                    }
+
+                    const trade = {
+                        id: currentTrade + 1,
+                        type: tradeType,
+                        price: price,
+                        profit: profit,
+                        informed: isInformed
+                    };
+
+                    setTrades(prev => [...prev, trade]);
+                    setTotalPnL(prev => prev + profit);
+                    setLastTradeResult(trade);
+                    
+                    setTimeout(() => setLastTradeResult(null), 2000);
+                }
+
+                setCurrentTrade(prev => prev + 1);
+                updateTrueValue();
+            }, [gameActive, currentTrade, askPrice, bidPrice, inventory, trueValue, level, updateTrueValue]);
+
+            // Auto-run trades
+            useEffect(() => {
+                if (gameActive) {
+                    const interval = setInterval(simulateTrade, 2000);
+                    return () => clearInterval(interval);
+                }
+            }, [gameActive, simulateTrade]);
+
+            // Start new game
+            const startGame = () => {
+                setCash(10000);
+                setInventory(0);
+                setTrueValue(100);
+                setBidPrice(99);
+                setAskPrice(101);
+                setTrades([]);
+                setCurrentTrade(0);
+                setTotalPnL(0);
+                setGameActive(true);
+                setLastTradeResult(null);
+            };
+
+            // Handle price updates
+            const updatePrices = (newBid, newAsk) => {
+                if (newBid >= newAsk) {
+                    alert("Bid price must be less than ask price!");
+                    return;
+                }
+                if (newBid < 70 || newAsk > 130) {
+                    alert("Keep prices between 70 and 130!");
+                    return;
+                }
+                setBidPrice(newBid);
+                setAskPrice(newAsk);
+            };
+
+            return (
+                <div className="max-w-6xl mx-auto p-6 bg-gradient-to-br from-gray-50 to-blue-50 rounded-xl shadow-xl">
+                    <div className="mb-6">
+                        <h1 className="text-3xl font-bold text-gray-800 mb-2">Market Making Game</h1>
+                        <p className="text-gray-600">Set bid/ask prices to profit from the spread while managing inventory risk</p>
+                    </div>
+
+                    {/* Level Selection */}
+                    {!gameActive && (
+                        <div className="mb-6 p-4 bg-white rounded-lg shadow">
+                            <h3 className="font-semibold mb-3">Select Difficulty Level:</h3>
+                            <div className="grid grid-cols-3 gap-3">
+                                <button
+                                    onClick={() => setLevel(1)}
+                                    className={`p-3 rounded ${level === 1 ? 'bg-blue-500 text-white' : 'bg-gray-100'}`}
+                                >
+                                    <div className="font-semibold">Level 1</div>
+                                    <div className="text-sm">Stable Market</div>
+                                </button>
+                                <button
+                                    onClick={() => setLevel(2)}
+                                    className={`p-3 rounded ${level === 2 ? 'bg-blue-500 text-white' : 'bg-gray-100'}`}
+                                >
+                                    <div className="font-semibold">Level 2</div>
+                                    <div className="text-sm">Volatile Market</div>
+                                </button>
+                                <button
+                                    onClick={() => setLevel(3)}
+                                    className={`p-3 rounded ${level === 3 ? 'bg-blue-500 text-white' : 'bg-gray-100'}`}
+                                >
+                                    <div className="font-semibold">Level 3</div>
+                                    <div className="text-sm">Informed Traders</div>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Main Dashboard */}
+                    <div className="grid grid-cols-3 gap-4 mb-6">
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-gray-600">Cash</span>
+                                <Icon name="dollar-sign" className="w-5 h-5 text-green-500" />
+                            </div>
+                            <div className="text-2xl font-bold text-gray-800">${cash.toFixed(2)}</div>
+                        </div>
+                        
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-gray-600">Inventory</span>
+                                <Icon name="package" className="w-5 h-5 text-blue-500" />
+                            </div>
+                            <div className="text-2xl font-bold text-gray-800">{inventory} shares</div>
+                            <div className="text-sm text-gray-500">Max: ±{MAX_INVENTORY}</div>
+                        </div>
+                        
+                        <div className="bg-white p-4 rounded-lg shadow">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-gray-600">P&L</span>
+                                <Icon name={currentPnL >= 0 ? "trending-up" : "trending-down"} className={`w-5 h-5 ${currentPnL >= 0 ? 'text-green-500' : 'text-red-500'}`} />
+                            </div>
+                            <div className={`text-2xl font-bold ${currentPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                ${currentPnL.toFixed(2)}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Market Info */}
+                    <div className="bg-white p-4 rounded-lg shadow mb-6">
+                        <div className="grid grid-cols-3 gap-4">
+                            <div>
+                                <div className="text-sm text-gray-600 mb-1">True Value (Hidden)</div>
+                                <div className="text-xl font-bold text-purple-600">
+                                    ${gameActive ? '???' : trueValue.toFixed(2)}
+                                </div>
+                            </div>
+                            <div>
+                                <div className="text-sm text-gray-600 mb-1">Spread</div>
+                                <div className="text-xl font-bold text-gray-800">
+                                    ${(askPrice - bidPrice).toFixed(2)}
+                                </div>
+                            </div>
+                            <div>
+                                <div className="text-sm text-gray-600 mb-1">Trade Progress</div>
+                                <div className="text-xl font-bold text-gray-800">
+                                    {currentTrade} / {MAX_TRADES}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Price Controls */}
+                    <div className="bg-white p-4 rounded-lg shadow mb-6">
+                        <h3 className="font-semibold mb-3">Your Quotes</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-sm text-gray-600">Bid Price (You Buy At)</label>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <input
+                                        type="number"
+                                        value={bidPrice}
+                                        onChange={(e) => updatePrices(parseFloat(e.target.value), askPrice)}
+                                        disabled={!gameActive}
+                                        step="0.5"
+                                        className="w-full p-2 border rounded"
+                                    />
+                                    <button
+                                        onClick={() => updatePrices(bidPrice - 0.5, askPrice)}
+                                        disabled={!gameActive}
+                                        className="px-3 py-2 bg-red-100 text-red-600 rounded hover:bg-red-200 disabled:opacity-50"
+                                    >
+                                        -
+                                    </button>
+                                    <button
+                                        onClick={() => updatePrices(bidPrice + 0.5, askPrice)}
+                                        disabled={!gameActive}
+                                        className="px-3 py-2 bg-green-100 text-green-600 rounded hover:bg-green-200 disabled:opacity-50"
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <div>
+                                <label className="text-sm text-gray-600">Ask Price (You Sell At)</label>
+                                <div className="flex items-center gap-2 mt-1">
+                                    <input
+                                        type="number"
+                                        value={askPrice}
+                                        onChange={(e) => updatePrices(bidPrice, parseFloat(e.target.value))}
+                                        disabled={!gameActive}
+                                        step="0.5"
+                                        className="w-full p-2 border rounded"
+                                    />
+                                    <button
+                                        onClick={() => updatePrices(bidPrice, askPrice - 0.5)}
+                                        disabled={!gameActive}
+                                        className="px-3 py-2 bg-red-100 text-red-600 rounded hover:bg-red-200 disabled:opacity-50"
+                                    >
+                                        -
+                                    </button>
+                                    <button
+                                        onClick={() => updatePrices(bidPrice, askPrice + 0.5)}
+                                        disabled={!gameActive}
+                                        className="px-3 py-2 bg-green-100 text-green-600 rounded hover:bg-green-200 disabled:opacity-50"
+                                    >
+                                        +
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Trade Notification */}
+                    {lastTradeResult && (
+                        <div className={`mb-4 p-3 rounded-lg ${lastTradeResult.profit > 0 ? 'bg-green-100' : 'bg-red-100'} animate-pulse`}>
+                            <div className="flex items-center gap-2">
+                                {lastTradeResult.informed && <Icon name="alert-circle" className="w-5 h-5 text-yellow-600" />}
+                                <span className="font-semibold">
+                                    Trader {lastTradeResult.type === 'BUY' ? 'BOUGHT' : 'SOLD'} at ${lastTradeResult.price.toFixed(2)}
+                                </span>
+                                <span className={`ml-auto font-bold ${lastTradeResult.profit > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    {lastTradeResult.profit > 0 ? '+' : ''}${lastTradeResult.profit.toFixed(2)}
+                                </span>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Recent Trades */}
+                    <div className="bg-white p-4 rounded-lg shadow mb-6">
+                        <h3 className="font-semibold mb-3">Recent Trades</h3>
+                        <div className="max-h-40 overflow-y-auto">
+                            {trades.length === 0 ? (
+                                <p className="text-gray-500">No trades yet</p>
+                            ) : (
+                                <div className="space-y-1">
+                                    {trades.slice(-5).reverse().map(trade => (
+                                        <div key={trade.id} className="flex justify-between text-sm">
+                                            <span className={trade.type === 'BUY' ? 'text-green-600' : 'text-red-600'}>
+                                                {trade.type} @ ${trade.price.toFixed(2)}
+                                            </span>
+                                            <span className={trade.profit > 0 ? 'text-green-600' : 'text-red-600'}>
+                                                {trade.profit > 0 ? '+' : ''}${trade.profit.toFixed(2)}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Game Controls */}
+                    <div className="flex gap-4">
+                        {!gameActive ? (
+                            <button
+                                onClick={startGame}
+                                className="flex-1 bg-blue-500 text-white py-3 rounded-lg hover:bg-blue-600 font-semibold"
+                            >
+                                Start Game
+                            </button>
+                        ) : (
+                            <button
+                                onClick={() => setGameActive(false)}
+                                className="flex-1 bg-red-500 text-white py-3 rounded-lg hover:bg-red-600 font-semibold"
+                            >
+                                End Game
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Game Over */}
+                    {!gameActive && currentTrade >= MAX_TRADES && (
+                        <div className="mt-6 p-6 bg-gradient-to-r from-purple-100 to-blue-100 rounded-lg">
+                            <div className="flex items-center gap-3 mb-4">
+                                <Icon name="trophy" className="w-8 h-8 text-yellow-500" />
+                                <h2 className="text-2xl font-bold">Game Complete!</h2>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <p className="text-gray-600">Final P&L</p>
+                                    <p className={`text-2xl font-bold ${currentPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        ${currentPnL.toFixed(2)}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-gray-600">Portfolio Value</p>
+                                    <p className="text-2xl font-bold text-gray-800">
+                                        ${portfolioValue.toFixed(2)}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Instructions */}
+                    <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                        <h3 className="font-semibold mb-2">How to Play:</h3>
+                        <ul className="text-sm text-gray-700 space-y-1">
+                            <li>• Set your bid (buy) and ask (sell) prices to create a spread</li>
+                            <li>• Traders will randomly arrive and trade at your prices</li>
+                            <li>• Earn profit from the spread, but watch your inventory!</li>
+                            <li>• Too much inventory exposes you to price risk</li>
+                            <li>• In Level 3, beware of informed traders who know future prices</li>
+                        </ul>
+                    </div>
+                </div>
+            );
+        };
+
+        // Render the app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<MarketMakingGame />);
+    </script>
+</body>
+</html>
